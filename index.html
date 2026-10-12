@@ -841,7 +841,7 @@ function renderSummary(){
 
 /* ===================== EVALUACIONES PARA LA PLATAFORMA ===================== */
 const PLAT_HOTEL={DRFPC:"Dreams Flora",DRRPC:"Dreams Royal Beach",SERPC:"Secrets Royal Beach",DROPC:"Dreams Onyx",BREPC:"Breathless Punta Cana",SEAUA:"Secrets Baby Beach",SDQCT:"Hyatt Centric Santo Domingo",DRJRC:"Dreams Jade"};
-function platState(v){const r=Math.round(v);return r>=90?"cumple":r>=71?"parcial":"nocumple"}
+function platState(v){const r=Math.round(v);return r>=90?"cumple":r>=50?"parcial":"nocumple"}
 function spaBuildPlatform(code){
  const es=rangeEntries().filter(e=>hotelsOf(e).includes(code)&&e.score!=null);
  if(!es.length)return null;
