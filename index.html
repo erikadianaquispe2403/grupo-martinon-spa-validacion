@@ -252,7 +252,8 @@ td{border-bottom:1px solid #eee7e0;padding:8px;vertical-align:top}
     <h2>KPIs registrados por Spa</h2>
     <div class="hint">Última ficha de Spa con KPIs dentro del rango. Semáforo RPG: verde ≥ $13 · amarillo $11–12.99 · rojo &lt; $11.</div>
     <div id="kpiTable" style="margin-top:8px"></div>
-    <div class="row-actions"><button onclick="exportSummaryWord()">📝 Exportar resumen a Word</button><button class="sec" onclick="exportSummaryPdf()">🖨️ Resumen en PDF</button></div>
+    <div class="row-actions"><button onclick="exportSummaryWord()">📝 Exportar resumen a Word</button><button class="sec" onclick="exportSummaryPdf()">🖨️ Resumen en PDF</button><button class="sec" onclick="spaExportPlatform()">⬆️ Generar evaluación para la plataforma</button></div>
+    <div class="hint">Baja un archivo con una evaluación de Spa por hotel (según el rango de fechas de arriba). En la plataforma corporativa, pestaña 7, usa “➕ Agregar evaluaciones desde archivo”.</div>
   </div>
 </section>
 
@@ -837,6 +838,66 @@ function renderSummary(){
  }).join("")}</tbody></table></div>`;
 }
 
+
+/* ===================== EVALUACIONES PARA LA PLATAFORMA ===================== */
+const PLAT_HOTEL={DRFPC:"Dreams Flora",DRRPC:"Dreams Royal Beach",SERPC:"Secrets Royal Beach",DROPC:"Dreams Onyx",BREPC:"Breathless Punta Cana",SEAUA:"Secrets Baby Beach",SDQCT:"Hyatt Centric Santo Domingo",DRJRC:"Dreams Jade"};
+function platState(v){const r=Math.round(v);return r>=90?"cumple":r>=71?"parcial":"nocumple"}
+function spaBuildPlatform(code){
+ const es=rangeEntries().filter(e=>hotelsOf(e).includes(code)&&e.score!=null);
+ if(!es.length)return null;
+ const pos={};const pc=[0,0,0,0];
+ const checklist=[],opps=[],acts=[],recs=[];
+ let tot=0,cnt=0,nPar=0,nNo=0;
+ CRITERIA.forEach(c=>{
+  const ii=pc[c.p]++,key=c.p+"_"+ii;
+  const vals=[],obs=[];let nc=0,np=0,nn=0;
+  es.forEach(e=>{const a=(e.answers||{})[c.id];if(!a)return;
+   if(a.r==="cumple"){vals.push(100);nc++}else if(a.r==="parcial"){vals.push(50);np++}else if(a.r==="nocumple"){vals.push(0);nn++}
+   if(a.obs&&a.obs.trim()&&(a.r==="parcial"||a.r==="nocumple"))obs.push(a.obs.trim())});
+  let result="na",o="";
+  if(vals.length){
+   const m=vals.reduce((x,y)=>x+y,0)/vals.length;result=platState(m);
+   o=`Fichas con dato: ${vals.length}; ${nc} cumple, ${np} parcial, ${nn} no cumple (promedio ${Math.round(m)}%).`+(obs.length?" Obs: "+[...new Set(obs)].slice(0,2).join(" | "):"");
+   if(result==="cumple")tot+=100;else if(result==="parcial"){tot+=50;nPar++}else nNo++;
+   cnt++;
+  }
+  checklist.push({block:PILLARS[c.p],item:c.t,result,obs:o,evidenceName:"",editable:true,evidenceNames:[]});
+  if(result==="parcial"||result==="nocumple"){
+   const isNo=result==="nocumple",id="AUTO-"+key+"-"+Date.now()+"-"+c.id;
+   const text=(isNo?"Atender incumplimiento: ":"Fortalecer cumplimiento parcial: ")+c.t;
+   opps.push({id,text,type:"Operativa",priority:isNo?"Alta":"Media",owner:"",criterion:c.t,pillar:PILLARS[c.p],obs:o,auto:true,autoCriterionKey:key});
+   acts.push({oppId:id,pillar:PILLARS[c.p],criterion:c.t,finding:text,text:isNo?"Definir e implementar acción correctiva para lograr el cumplimiento del criterio.":"Completar los ajustes requeridos para alcanzar el cumplimiento total del criterio.",owner:"",date:"",status:"Pendiente",evidenceName:"",auto:true,autoCriterionKey:key,assignees:[{date:"",plan:"",owner:"",updates:[]}]});
+   recs.push((isNo?"• Priorizar acción correctiva para: ":"• Completar ajustes para: ")+c.t);
+  }
+ });
+ const score=cnt?Math.round(tot/cnt):0;
+ const status=score>=90?"Implementación Consolidada":score>=71?"Requiere Seguimiento":"Requiere Intervención Prioritaria";
+ const dates=es.map(e=>e.date).filter(Boolean).sort(),freq={};
+ es.forEach(e=>{if(e.evaluator)freq[e.evaluator]=(freq[e.evaluator]||0)+1});
+ const evaluator=Object.keys(freq).sort((a,b)=>freq[b]-freq[a])[0]||"Erika Quispe";
+ const nP=es.filter(e=>e.ftype!=="S").length,nS=es.filter(e=>e.ftype==="S").length;
+ const finds=[...new Set(es.map(e=>(e.findings||"").trim()).filter(Boolean))].join("\n");
+ return {code:"",savedAt:new Date().toISOString(),project:"Spa",hotel:PLAT_HOTEL[code]||code,property:{},visitDate:dates[dates.length-1]||"",evaluator,hotelDirector:"",corporateDirector:"Glenys Silverio",manager:"",area:"",checkinArea:"",operationalUnits:[],shift:"",score,status,
+  checklist,opportunities:opps,actions:acts,
+  generalComments:`Evaluación generada a partir de ${es.length} ficha(s) de la validación SPA (${nP} de punto de venta y ${nS} de Spa/gerencia) entre ${fmtDate(dates[0])} y ${fmtDate(dates[dates.length-1])}. Cada criterio resume el promedio de las fichas; los criterios sin dato quedan N/A.`+(finds?"\nHallazgos registrados:\n"+finds:""),
+  conclusions:`La evaluación obtuvo ${score}% (${status}). Se registraron ${nNo} criterio(s) No cumple y ${nPar} criterio(s) Parcial.`,
+  recommendations:recs.join("\n"),corporateSupport:"No",supportNeeded:"",nextVisitDate:"",nextVisitObjective:"",
+  source:"validacion-spa",interviewStats:{fichasPunto:nP,fichasSpa:nS,desde:dates[0]||"",hasta:dates[dates.length-1]||""}};
+}
+function spaExportPlatform(){
+ const recs=[],avisos=[];
+ catalog.hotels.filter(h=>h.status!=="noaplica").forEach(h=>{
+  const r=spaBuildPlatform(h.code);if(!r)return;recs.push(r);
+  const s=hotelStats(h.code);
+  if(!s.nP||!s.nS)avisos.push(`${h.name}: ${s.nP} ficha(s) de punto y ${s.nS} de Spa`);
+ });
+ if(!recs.length){alert("No hay fichas calificadas en el rango de fechas seleccionado.");return}
+ if(avisos.length&&!confirm("Estos hoteles no tienen ambos tipos de ficha (punto de venta y Spa):\n\n"+avisos.join("\n")+"\n\n¿Generar el archivo de todos modos?"))return;
+ const blob=new Blob([JSON.stringify({gm_platform_assessments_v1:true,assessments:recs},null,1)],{type:"application/json"});
+ const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="Evaluaciones_Spa_para_plataforma_"+todayISO()+".json";
+ document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+ toast(`Archivo generado con ${recs.length} hotel(es).`);
+}
 /* ===================== EXPORTACIÓN ===================== */
 const DOC_CSS=`body{font-family:Arial,sans-serif;font-size:10.5pt;color:#1f2937}h1{color:#1F3864;font-size:16pt;margin:0}h2{color:#1F3864;font-size:12.5pt;border-bottom:2px solid #B08D3E;padding-bottom:3px;margin-top:16px}
 .sub{color:#B08D3E;font-weight:bold}table{border-collapse:collapse;width:100%;margin:6px 0}th{background:#1F3864;color:#fff;text-align:left}th,td{border:1px solid #c9c2ba;padding:5px;vertical-align:top;font-size:9.5pt}
